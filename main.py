@@ -13,13 +13,9 @@ import chess.engine
 from Console import *
 import os
 from rich.progress import track, Progress
-from rich.console import Console
-from rich.live import Live
-from rich.table import Table
 import random
 from rich.prompt import Prompt
 import time
-import sys
 
 
 # tuple sorter
