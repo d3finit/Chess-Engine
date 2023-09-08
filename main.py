@@ -19,84 +19,87 @@ import time
 
 
 # tuple sorter
-def Sort_Tuple(tup):
-    tup.sort(key = lambda x: x[1])
+def sort_tuple(tup):
+    tup.sort(key=lambda x: x[1])
     return tup
 
-def convert_to_int(board):
-    indices = '♚♛♜♝♞♟⭘♙♘♗♖♕♔'
-    unicode = board.unicode()
+
+def convert_to_int(board_to_convert):
     return [
-        [indices.index(c)-6 for c in row.split()]
-        for row in unicode.split('\n')
+        ['♚♛♜♝♞♟⭘♙♘♗♖♕♔'.index(c) - 6 for c in row.split()]
+        for row in board_to_convert.unicode().split('\n')
     ]
 
-def convert_to_ANASI(board):
-        mapped = {
-            1 : "♟",     # White Pawn
-            -1: "♙",    # Black Pawn
-            2 : "♞",     # White Knight
-            -2: "♘",    # Black Knight
-            3 : "♝",     # White Bishop
-            -3: "♗",    # Black Bishop
-            4 : "♜",     # White Rook
-            -4: "♖",    # Black Rook
-            5 : "♛",     # White Queen
-            -5: "♕",    # Black Queen
-            6 : "♚",     # White King
-            -6: "♔"     # Black King
-        }
-        for i in range(len(board)):
-            for j in range(len(board[i])):
-                if board[i][j] != 0:
-                    board[i][j] = mapped[board[i][j]]
-                else:
-                    board[i][j] = "⭘"
+
+def convert_to_anasi(board_to_convert):
+    mapped = {
+        1: "♟",  # White Pawn
+        -1: "♙",  # Black Pawn
+        2: "♞",  # White Knight
+        -2: "♘",  # Black Knight
+        3: "♝",  # White Bishop
+        -3: "♗",  # Black Bishop
+        4: "♜",  # White Rook
+        -4: "♖",  # Black Rook
+        5: "♛",  # White Queen
+        -5: "♕",  # Black Queen
+        6: "♚",  # White King
+        -6: "♔"  # Black King
+    }
+    for j in range(len(board_to_convert)):
+        for h in range(len(board_to_convert[j])):
+            if board_to_convert[j][h] != 0:
+                board_to_convert[j][h] = mapped[board_to_convert[j][h]]
+            else:
+                board_to_convert[j][h] = "⭘"
+
+    return board_to_convert
 
 
-        return board
-
-def print_good(board):
-    board = convert_to_ANASI(convert_to_int(board))
+def print_good(board_to_convert):
+    board_to_convert = convert_to_anasi(convert_to_int(board_to_convert))
 
     print("  |A|B|C|D|E|F|G|H|")
 
-    for i in range(len(board)):
-        line = f"|{str(8-i)}|"
-        for j in range(len(board[i])):
-            line = line + board[i][j] + " "
+    for j in range(len(board_to_convert)):
+        line = f"|{str(8 - j)}|"
+        for h in range(len(board_to_convert[j])):
+            line = line + board_to_convert[j][h] + " "
 
         print(line)
 
 
-def get_material(board):
-    board = convert_to_int(board)
+def get_material(board_to_get):
+    board_to_get = convert_to_int(board_to_get)
 
     num = 0
 
-    for i in range(len(board)):
-        for j in range(len(board[i])):
-            num += int(board[i][j])
+    for j in range(len(board_to_get)):
+        for h in range(len(board_to_get[j])):
+            num += int(board_to_get[j][h])
 
     return num
+
 
 # Move Generation
 def generate_moves():
     moves = []
-    for move in board.legal_moves:
-        moves.append(move)
+    for move_list in board.legal_moves:
+        moves.append(move_list)
     return moves
 
+
 # Move Evaluation
-def evaluate_move(move):
+def evaluate_move():
     # Simple evaluation function: Return a random score between -1 and 1
-    score = random.uniform(-1, 1)
-    return score
+    eval_score = random.uniform(-1, 1)
+    return eval_score
+
 
 # Search Algorithm
 def minimax(depth, maximizing_player):
     if depth == 0 or board.is_game_over():
-        return evaluate_move(None)
+        return evaluate_move()
 
     if maximizing_player:
         max_eval = float("-inf")
@@ -114,6 +117,7 @@ def minimax(depth, maximizing_player):
             board.pop()
             min_eval = min(min_eval, eval)
         return min_eval
+
 
 def recurse_checkmate(board, movestack, limit):
     with Progress() as progress:
@@ -133,9 +137,10 @@ def recurse_checkmate(board, movestack, limit):
 
     return movestack
 
+
 def recurse_checkmate_2(board, movestack, limit, move, progress):
     if limit == 0:
-        if board.is_checkmate() == True:
+        if board.is_checkmate():
             movestack.append([move, 10000])
     else:
         if limit == 1 or limit == 2:
@@ -178,10 +183,12 @@ def recurse_material(board, movestack, limit, full_board, blocked_moves):
                     blocked_moves.append(move)
 
                 progress.update(d1, advance=1)
-                temp = recurse_material_2(temp_board, movestack, limit - 1, temp_move, progress, full_board, blocked_moves)
+                temp = recurse_material_2(temp_board, movestack, limit - 1, temp_move, progress, full_board,
+                                          blocked_moves)
                 movestack, blocked_moves = movestack + temp[0], blocked_moves + temp[1]
 
     return movestack, blocked_moves
+
 
 def recurse_material_2(board, movestack, limit, move, progress, full_board, blocked_moves):
     if limit == 0:
@@ -215,13 +222,11 @@ def recurse_material_2(board, movestack, limit, move, progress, full_board, bloc
     return movestack, blocked_moves
 
 
-
 if __name__ == "__main__":
     # PERMVARS
     MATE_SCAN_DEPTH = 4
     MATERIAL_SCAN_DEPTH = 5
     MINIMAX_DEPTH = 3
-
 
     # load stonksfish
     engine = chess.engine.SimpleEngine.popen_uci(r".\stockfish\stockfish-windows-x86-64-avx2.exe")
@@ -231,7 +236,6 @@ if __name__ == "__main__":
     board = first_game.board()
     for move in first_game.mainline_moves():
         board.push(move)
-
 
     clear()
 
@@ -245,8 +249,8 @@ if __name__ == "__main__":
 
     while True:
         # get user move
-        # move = Prompt.ask("Enter your move (UCI format, enter to have Stockfish16 play.)")
-        move = ""
+        move = Prompt.ask("Enter your move (UCI format, enter to have Stockfish16 play.)")
+        # move = ""
         try:
             while chess.Move.from_uci(move) not in board.legal_moves:
                 move = Prompt.ask("Enter your move (UCI)")
@@ -255,8 +259,6 @@ if __name__ == "__main__":
         except:
             result = engine.play(board, chess.engine.Limit(time=0.1))
             board.push(result.move)
-
-
 
         clear()
         if get_material(board) <= -1:
@@ -267,13 +269,11 @@ if __name__ == "__main__":
             print("Tied in material")
         print_good(board)
 
-
         start = time.time()
 
         # begin the engine
         allmoves = []
         blocked_moves = []
-
 
         best_score = float("-inf")
         best_move = None
@@ -286,7 +286,6 @@ if __name__ == "__main__":
                 best_move = move
 
         allmoves.append([best_move, 100000])
-
 
         for i in range(1, MATE_SCAN_DEPTH + 1):
             if len(allmoves) >= 1:
@@ -301,17 +300,13 @@ if __name__ == "__main__":
                 temp = recurse_material(board, allmoves, i, board, blocked_moves)
                 allmoves, blocked_moves = allmoves + temp[0], blocked_moves + temp[1]
 
-
         # check the polygot books for openings
         for i in track(range(len(os.listdir("./polygot_openings/"))), description="Loading polygot_openings..."):
             with chess.polyglot.open_reader("./polygot_openings/" + os.listdir("./polygot_openings/")[i]) as reader:
                 for entry in reader.find_all(board):
                     allmoves.append([entry.move, entry.weight])
 
-
-
-
-        reccomended_moves = Sort_Tuple(allmoves)
+        reccomended_moves = sort_tuple(allmoves)
         reccomended_moves.reverse()
 
         first_game.add_variation(chess.Move.from_uci(str(reccomended_moves[0][0])))
@@ -320,10 +315,8 @@ if __name__ == "__main__":
         print(board)
         # print(f"I reccomend the move: {reccomended_moves[0][0]} with a confidence of {reccomended_moves[0][1]}")
 
-
-
         # engine move
-        reccomended_moves = Sort_Tuple(allmoves)
+        reccomended_moves = sort_tuple(allmoves)
         reccomended_moves.reverse()
         if board.legal_moves.count() == 0:
             if len(reccomended_moves) < 0:
@@ -353,8 +346,6 @@ if __name__ == "__main__":
         print(f"Computer move: {move}")
         end = time.time()
         print(f"Computer took: " + str(end - start))
-
-
 
         if board.outcome() is not None:
             print(board.outcome().termination)
