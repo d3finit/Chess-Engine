@@ -3,12 +3,14 @@ def sort_tuple(tup):
     tup.sort(key=lambda x: x[1])
     return tup
 
+
 # bops the board to be intagers of peive values or something I forgot lol
 def convert_to_int(board_to_convert):
     return [
         ['♚♛♜♝♞♟⭘♙♘♗♖♕♔'.index(c) - 6 for c in row.split()]
         for row in board_to_convert.unicode().split('\n')
     ]
+
 
 # converts the board to ANASI characters
 def convert_to_anasi(board_to_convert):
@@ -34,6 +36,7 @@ def convert_to_anasi(board_to_convert):
                 board_to_convert[j][h] = "⭘"
 
     return board_to_convert
+
 
 # prints a formatted board
 def print_board(board_to_convert):

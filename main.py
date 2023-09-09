@@ -23,6 +23,7 @@ def get_material(board_to_get):
     return num
 
 
+# TODO: add alpha / beta pruning here and optimize it
 def recurse_checkmate(board, movestack, limit):
     with Progress() as progress:
         d1 = progress.add_task(f"Mate in X, depth {limit} checking...", total=board.legal_moves.count())
