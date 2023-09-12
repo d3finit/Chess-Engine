@@ -31,7 +31,23 @@ def get_material(board_to_get):
     return num
 
 
-# TODO: add alpha / beta pruning here and optimize it
+def is_piece_hang(board, move):
+    ori_material = get_material(board)
+    board.push(move)
+    with_move_material = get_material(board)
+
+    for m1 in board.legal_moves:
+        temp_board = board
+        temp_board.push(m1)
+        tb_material = get_material(temp_board)
+        for m2 in temp_board.legal_moves:
+            tb2 = temp_board
+            tb2.push(m2)
+            tb2_material = get_material(tb2)
+
+            if ori_material - with_move_material <= tb2_material:
+                return False
+
 
 def new_recurse_checkmate(board, movestack, depth):
     if depth > 0:
@@ -73,7 +89,7 @@ def new_recurse_material(board, movestack, depth, pathisgood):
 
                 if get_material(temp_board) > get_material(board):
                     pathisgood = True
-                    movestack.append([temp_move, get_material(temp_board)])
+                    movestack.append([temp_move, get_material(temp_board) * 100])
 
                 else:
                     pathisgood = False
@@ -213,6 +229,7 @@ def evaluate_board(board):
 
     return score
 
+
 def move_eval_thing(board, movestack):
     for temp_move in board.legal_moves:
         get_material(board)
@@ -228,7 +245,7 @@ def move_eval_thing(board, movestack):
         # print(temp_board)
         # input("")
         if x > evaluate_board(board):
-            print(x)
+            # print(x)
             movestack.append([temp_move, x])
 
     return movestack
@@ -273,10 +290,8 @@ if __name__ == "__main__":
     USE_STOCKFISH = bool(config["use_stockfish"])
 
     computer_moves = 0
-
-    # load stonksfish
     engine = chess.engine.SimpleEngine.popen_uci(r".\stockfish\stockfish-windows-x86-64-avx2.exe")
-    # open the game
+
     pgn = open("CurrentGame.pgn")
     first_game = chess.pgn.read_game(pgn)
     board = first_game.board()
@@ -292,16 +307,15 @@ if __name__ == "__main__":
     else:
         print("Tied in material")
 
-    print("MATERIAL_SCAN_DEPTH: " + str(MATERIAL_SCAN_DEPTH))
     print_board(board)
 
     running = True
     while running:
         # get user move
-        if not USE_STOCKFISH:
-            player_move = Prompt.ask("Enter your move (UCI format, enter to have Stockfish16 play.)")
-        elif USE_STOCKFISH:
+        if USE_STOCKFISH:
             player_move = ""
+        elif not USE_STOCKFISH:
+            player_move = Prompt.ask("Enter your move (UCI format, enter to have Stockfish16 play.)")
 
         try:
             while chess.Move.from_uci(player_move) not in board.legal_moves:
@@ -321,7 +335,6 @@ if __name__ == "__main__":
         else:
             print("Tied in material")
 
-        print("MATERIAL_SCAN_DEPTH: " + str(MATERIAL_SCAN_DEPTH))
         # print("Move: " + str(computer_moves))
         print_board(board)
 
@@ -387,9 +400,13 @@ if __name__ == "__main__":
                         move = move.uci()
                         break
                 else:
-                    move = str(reccomended_moves[0][0])
-                    first_game.add_variation(chess.Move.from_uci(str(reccomended_moves[0][0])))
-                    board.push(chess.Move.from_uci(str(reccomended_moves[0][0])))
+                    for move in reccomended_moves:
+                        if not is_piece_hang(board, reccomended_moves[i][0]):
+                            move = str(reccomended_moves[0][0])
+                            first_game.add_variation(chess.Move.from_uci(str(reccomended_moves[0][0])))
+                            board.push(chess.Move.from_uci(str(reccomended_moves[0][0])))
+
+                            break
 
         clear()
 
@@ -399,7 +416,6 @@ if __name__ == "__main__":
             print(f"White is up {get_material(board)}")
         else:
             print("Tied in material")
-        print("MATERIAL_SCAN_DEPTH: " + str(MATERIAL_SCAN_DEPTH))
         print_board(board)
         try:
             move = str(reccomended_moves[0][0])
