@@ -31,59 +31,10 @@ from Utils import sort_tuple, convert_to_int, print_board, get_material  # local
 
 
 
-class MyApp(App):
-    BINDINGS = [
-        Binding(key="q", action="quit", description="Quit the app"),
-        Binding(key="j", action="down", description="Scroll down", show=False),
-    ]
-    CSS_PATH = "button.css"
-    CSS_PATH = "horizontal_layout.css"
-    # CSS_PATH = "layers.css"
-
-
-    def compose(self) -> ComposeResult:
-        yield Footer()
-        yield Header(show_clock=True, name="App")
-        yield Horizontal(
-            VerticalScroll(
-                Static("Standard Buttons", classes="header"),
-                Button("Play"),
-                RichLog(id="InputLog"),
-                Input(
-                    placeholder="Enter a number...",
-                    validators=[
-                        Move(),
-                    ],
-                )
-            )
-        )
-
-    def on_key(self, event: events.Key) -> None:
-        # self.query_one("#ButtonLog").write(event)
-        pass
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.query_one("#InputLog").write(str(event.button))
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        self.query_one("#InputLog").write(event.value)
-
-
-class Move(Validator):
-    def validate(self, value: str) -> ValidationResult:
-        if self.is_move(value):
-            return self.success()
-        else:
-            return self.failure("That's not a move :/")
-
-    @staticmethod
-    def is_move(value: str) -> bool:
-        return (len(value) == 4) == True
-
-
 class TimeoutException(Exception):
     def __init__(self, msg=''):
         self.msg = msg
+
 
 @contextmanager
 def time_limit(seconds, msg=''):
@@ -258,7 +209,6 @@ def evaluate_board(board):
         queen_score_map[i] = list(reversed(queen_score_map[i]))
     queen_score_map = list(reversed(queen_score_map))
 
-
     for i in range(len(databoard)):
         for j in range(len(databoard[i])):
             piece = board.piece_at(chess.parse_square(databoard[i][j]))
@@ -292,7 +242,6 @@ def evaluate_board(board):
                         score = score - queen_score_map[i][j]
                     else:
                         score = score + queen_score_map[i][j]
-
 
     return score
 
@@ -340,9 +289,57 @@ def tablebase_scan(board, movestack):
         pass
 
 
+class MyApp(App):
+    BINDINGS = [
+        Binding(key="q", action="quit", description="Quit the app"),
+        Binding(key="j", action="down", description="Scroll down", show=False),
+    ]
+
+    CSS_PATH = "horizontal_layout.css"
+
+    def compose(self) -> ComposeResult:
+        yield Footer()
+        yield Header(show_clock=True, name="App")
+        yield Horizontal(
+            VerticalScroll(
+                Static("Standard Buttons", classes="header"),
+                Button("Play"),
+                RichLog(id="InputLog"),
+                Input(
+                    placeholder="Enter a move...",
+                    validators=[
+                        Move(),
+                    ],
+                )
+            )
+        )
+
+    def on_key(self, event: events.Key) -> None:
+        # self.query_one("#ButtonLog").write(event)
+        pass
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        l = event.button.label
+        self.query_one("#InputLog").write(str(l))
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.query_one("#InputLog").write(event.value)
+
+
+class Move(Validator):
+    def validate(self, value: str) -> ValidationResult:
+        if self.is_move(value):
+            return self.success()
+        else:
+            return self.failure("That's not a move :/")
+
+    @staticmethod
+    def is_move(value: str) -> bool:
+        return (len(value) == 4) == True
+
+
+
 if __name__ == "__main__":
-
-
     parser = argparse.ArgumentParser(description="Just an example",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-matesd", "--mate-scan-depth", help="how far should the model go in checkmate checking?")
@@ -354,7 +351,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config = vars(args)
     print(config)
-
+    
     MATE_SCAN_DEPTH = int(config["mate_scan_depth"])
     MATERIAL_SCAN_DEPTH = int(config["material_scan_depth"])
     USE_STOCKFISH = bool(config["use_stockfish"])
@@ -385,12 +382,10 @@ if __name__ == "__main__":
         elif not USE_STOCKFISH:
             player_move = Prompt.ask("Enter your move (UCI format, enter to have Stockfish16 play.)")
 
-
             while chess.Move.from_uci(player_move) not in board.legal_moves:
                 player_move = Prompt.ask("Enter your move (UCI)")
             first_game.add_variation(chess.Move.from_uci(player_move))
             board.push(chess.Move.from_uci(player_move))
-
 
         print_board(board)
 
@@ -435,8 +430,6 @@ if __name__ == "__main__":
             result = engine.analyse(board, chess.engine.Limit(time=1))
             print(result["score"].black())
 
-
-
         # engine move
         reccomended_moves = sort_tuple(allmoves)
         reccomended_moves.reverse()
@@ -463,7 +456,6 @@ if __name__ == "__main__":
                             print_board(board)
                             print(move)
                             break
-
 
         print_board(board)
         # print(move.uci())
