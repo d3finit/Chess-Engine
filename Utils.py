@@ -1,3 +1,5 @@
+from Console import *
+
 # tuple sorter
 def sort_tuple(tup):
     tup.sort(key=lambda x: x[1])
@@ -37,9 +39,25 @@ def convert_to_anasi(board_to_convert):
 
     return board_to_convert
 
+def get_material(board_to_get):
+    board_to_get = convert_to_int(board_to_get)
+    num = 0
+    for j in range(len(board_to_get)):
+        for h in range(len(board_to_get[j])):
+            num += int(board_to_get[j][h])
+    return num
+
 
 # prints a formatted board
 def print_board(board_to_convert):
+    # clear()
+    if get_material(board_to_convert) <= -1:
+        print(f"Black is up {get_material(board_to_convert) * -1}")
+    elif get_material(board_to_convert) >= 1:
+        print(f"White is up {get_material(board_to_convert)}")
+    else:
+        print("Tied in material")
+
     board_to_convert = convert_to_anasi(convert_to_int(board_to_convert))
 
     print("  |A|B|C|D|E|F|G|H|")

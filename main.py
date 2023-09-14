@@ -7,28 +7,35 @@
 import os
 import time
 
-import chess
-import chess.engine
-import chess.pgn
-import chess.polyglot
-import chess.svg
-import chess.gaviota
+import chess, chess.engine, chess.pgn, chess.polyglot, chess.svg, chess.gaviota
 from rich.progress import track, Progress
 from rich.prompt import Prompt
-import argparse
-import csv
+import argparse, csv
+from contextlib import contextmanager
+import threading
+import _thread
+import time
+import sys
 
 from Console import *
-from Utils import sort_tuple, convert_to_int, print_board  # local lib for stuff
+from Utils import sort_tuple, convert_to_int, print_board, get_material  # local lib for stuff
 
 
-def get_material(board_to_get):
-    board_to_get = convert_to_int(board_to_get)
-    num = 0
-    for j in range(len(board_to_get)):
-        for h in range(len(board_to_get[j])):
-            num += int(board_to_get[j][h])
-    return num
+class TimeoutException(Exception):
+    def __init__(self, msg=''):
+        self.msg = msg
+
+@contextmanager
+def time_limit(seconds, msg=''):
+    timer = threading.Timer(seconds, lambda: _thread.interrupt_main())
+    timer.start()
+    try:
+        yield
+    except KeyboardInterrupt:
+        raise TimeoutException("Timed out for operation {}".format(msg))
+    finally:
+        # if the action ends in specified time, timer is canceled
+        timer.cancel()
 
 
 def is_piece_hang(board, move):
@@ -298,44 +305,25 @@ if __name__ == "__main__":
     for move in first_game.mainline_moves():
         board.push(move)
 
-    clear()
-
-    if get_material(board) <= -1:
-        print(f"Black is up {get_material(board) * -1}")
-    elif get_material(board) >= 1:
-        print(f"White is up {get_material(board)}")
-    else:
-        print("Tied in material")
-
-    print_board(board)
-
     running = True
     while running:
+        print_board(board)
+
         # get user move
         if USE_STOCKFISH:
-            player_move = ""
+            result = engine.play(board, chess.engine.Limit(time=0.1))
+            board.push(result.move)
+
         elif not USE_STOCKFISH:
             player_move = Prompt.ask("Enter your move (UCI format, enter to have Stockfish16 play.)")
 
-        try:
+
             while chess.Move.from_uci(player_move) not in board.legal_moves:
                 player_move = Prompt.ask("Enter your move (UCI)")
             first_game.add_variation(chess.Move.from_uci(player_move))
             board.push(chess.Move.from_uci(player_move))
-        except Exception as e:
-            # print(e)
-            result = engine.play(board, chess.engine.Limit(time=0.1))
-            board.push(result.move)
 
-        clear()
-        if get_material(board) <= -1:
-            print(f"Black is up {get_material(board) * -1}")
-        elif get_material(board) >= 1:
-            print(f"White is up {get_material(board)}")
-        else:
-            print("Tied in material")
 
-        # print("Move: " + str(computer_moves))
         print_board(board)
 
         start = time.time()
@@ -343,24 +331,25 @@ if __name__ == "__main__":
         # begin the engine
         allmoves = []
         blocked_moves = []
+        try:
+            with time_limit(5, 'sleep'):
+                x1 = new_recurse_checkmate(board, allmoves, MATE_SCAN_DEPTH)
+                if x1 is not None:
+                    allmoves = allmoves + x1
 
-        x1 = new_recurse_checkmate(board, allmoves, MATE_SCAN_DEPTH)
-        if x1 is not None:
-            allmoves = allmoves + x1
-        else:
-            pass
+                x2 = new_recurse_material(board, allmoves, MATERIAL_SCAN_DEPTH, True)
+                if x2 is not None:
+                    allmoves = allmoves + x2
 
-        x2 = new_recurse_material(board, allmoves, MATERIAL_SCAN_DEPTH, True)
-        if x2 is not None:
-            allmoves = allmoves + x2
+                x3 = tablebase_scan(board, allmoves)
+                if x3 is not None:
+                    allmoves = allmoves + x3
 
-        x3 = tablebase_scan(board, allmoves)
-        if x3 is not None:
-            allmoves = allmoves + x3
-
-        x4 = move_eval_thing(board, allmoves)
-        if x4 is not None:
-            allmoves = allmoves + x4
+                x4 = move_eval_thing(board, allmoves)
+                if x4 is not None:
+                    allmoves = allmoves + x4
+        except TimeoutException:
+            print("TIMES UP")
 
         # check the polygot books for openings
         for i in track(range(len(os.listdir("./polygot_openings/"))), description="Loading polygot_openings..."):
@@ -374,16 +363,11 @@ if __name__ == "__main__":
             first_game.add_variation(chess.Move.from_uci(str(reccomended_moves[0][0])))
             board.push(chess.Move.from_uci(str(reccomended_moves[0][0])))
         except IndexError:
-            # ran out of moves
             print("Ran out of moves")
             result = engine.analyse(board, chess.engine.Limit(time=1))
             print(result["score"].black())
-            # x.append(i)
-            # y.append(result["score"].black())
-            # input("i")
-        clear()
-        print(board)
-        # print(f"I reccomend the move: {reccomended_moves[0][0]} with a confidence of {reccomended_moves[0][1]}")
+
+
 
         # engine move
         reccomended_moves = sort_tuple(allmoves)
@@ -398,55 +382,44 @@ if __name__ == "__main__":
                         first_game.add_variation(move)
                         board.push(move)
                         move = move.uci()
+                        print(move.uci())
+                        print_board(board)
+                        print(move.uci())
                         break
                 else:
-                    for move in reccomended_moves:
+                    for move2 in reccomended_moves:
                         if not is_piece_hang(board, reccomended_moves[i][0]):
                             move = str(reccomended_moves[0][0])
                             first_game.add_variation(chess.Move.from_uci(str(reccomended_moves[0][0])))
                             board.push(chess.Move.from_uci(str(reccomended_moves[0][0])))
-
+                            print_board(board)
+                            print(move)
                             break
 
-        clear()
 
-        if get_material(board) <= -1:
-            print(f"Black is up {get_material(board) * -1}")
-        elif get_material(board) >= 1:
-            print(f"White is up {get_material(board)}")
-        else:
-            print("Tied in material")
         print_board(board)
-        try:
+        # print(move.uci())
+
+        if (len(reccomended_moves) >= 1):
             move = str(reccomended_moves[0][0])
-        except IndexError:
+        else:
             move = "NONE"
+
         print(f"Computer move: {move}")
         end = time.time()
         computer_moves += 1
-        print(f"Computer took: " + str(end - start) + " Move: " + str(computer_moves))
+        print(f"Computer took: " + str(end - start))
 
         if board.outcome() is not None:
             print(board.outcome().termination)
-            print("gameover")
-            print(first_game)
-            with open('data.csv', 'w', newline='') as file:
+            print("385: game over.")
+            # print(first_game)
+            with open('data.csv', 'a', newline='\n') as file:
                 writer = csv.writer(file)
                 writer.writerow([board.outcome().termination, board.fen()])
 
             running = False
-        # print(f"I reccomend the move: {reccomended_moves[0][0]} with a confidence of {reccomended_moves[0][1]}")
-
-"""# plotting the points
-plt.plot(x, y)
-
-# naming the x axis
-plt.xlabel('Strenght')
-# naming the y axis
-plt.ylabel('stockfish eval (black pov)')
-
-# giving a title to my graph
-plt.title('My first graph!')
-
-# function to show the plot
-plt.show()"""
+            try:
+                os.system("python3 .\main.py -matesd 1 -materialsd 1 -sf")
+            except KeyboardInterrupt:
+                sys.exit()
