@@ -16,9 +16,69 @@ import threading
 import _thread
 import time
 import sys
+from textual import events
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.containers import Horizontal, VerticalScroll
+from textual.widgets import Footer, Header, RichLog, Button, Static, Input, Label, Pretty
+from textual.validation import Function, Number, ValidationResult, Validator
+from textual import on
+import asyncio
 
 from Console import *
 from Utils import sort_tuple, convert_to_int, print_board, get_material  # local lib for stuff
+
+
+
+
+class MyApp(App):
+    BINDINGS = [
+        Binding(key="q", action="quit", description="Quit the app"),
+        Binding(key="j", action="down", description="Scroll down", show=False),
+    ]
+    CSS_PATH = "button.css"
+    CSS_PATH = "horizontal_layout.css"
+    # CSS_PATH = "layers.css"
+
+
+    def compose(self) -> ComposeResult:
+        yield Footer()
+        yield Header(show_clock=True, name="App")
+        yield Horizontal(
+            VerticalScroll(
+                Static("Standard Buttons", classes="header"),
+                Button("Play"),
+                RichLog(id="InputLog"),
+                Input(
+                    placeholder="Enter a number...",
+                    validators=[
+                        Move(),
+                    ],
+                )
+            )
+        )
+
+    def on_key(self, event: events.Key) -> None:
+        # self.query_one("#ButtonLog").write(event)
+        pass
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.query_one("#InputLog").write(str(event.button))
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.query_one("#InputLog").write(event.value)
+
+
+class Move(Validator):
+    def validate(self, value: str) -> ValidationResult:
+        if self.is_move(value):
+            return self.success()
+        else:
+            return self.failure("That's not a move :/")
+
+    @staticmethod
+    def is_move(value: str) -> bool:
+        return (len(value) == 4) == True
 
 
 class TimeoutException(Exception):
@@ -281,12 +341,15 @@ def tablebase_scan(board, movestack):
 
 
 if __name__ == "__main__":
+
+
     parser = argparse.ArgumentParser(description="Just an example",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-matesd", "--mate-scan-depth", help="how far should the model go in checkmate checking?")
     parser.add_argument("-materialsd", "--material-scan-depth",
                         help="how far should the model go in material gain/loss checking?")
     parser.add_argument("-sf", "--use-stockfish", action="store_true", help="have the engine play stockfish?")
+    parser.add_argument("-ui", "--expemental-ui", action="store_true", help="enable expemental ui?")
 
     args = parser.parse_args()
     config = vars(args)
@@ -295,6 +358,11 @@ if __name__ == "__main__":
     MATE_SCAN_DEPTH = int(config["mate_scan_depth"])
     MATERIAL_SCAN_DEPTH = int(config["material_scan_depth"])
     USE_STOCKFISH = bool(config["use_stockfish"])
+    EXPERMENTAL_UI_ENABLE = bool(config["expemental_ui"])
+
+    if (EXPERMENTAL_UI_ENABLE):
+        app = MyApp()
+        asyncio.run(app.run_async())
 
     computer_moves = 0
     engine = chess.engine.SimpleEngine.popen_uci(r".\stockfish\stockfish-windows-x86-64-avx2.exe")
