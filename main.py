@@ -20,15 +20,14 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
-from textual.widgets import Footer, Header, RichLog, Button, Static, Input, Label, Pretty
+from textual.widgets import Footer, Header, RichLog, Button, Static, Input, Label, Pretty, DataTable
 from textual.validation import Function, Number, ValidationResult, Validator
 from textual import on
+from rich.text import Text
 import asyncio
 
 from Console import *
 from Utils import sort_tuple, convert_to_int, print_board, get_material  # local lib for stuff
-
-
 
 
 class TimeoutException(Exception):
@@ -310,17 +309,33 @@ class MyApp(App):
                     validators=[
                         Move(),
                     ],
-                )
+                ),
+                DataTable()
             )
         )
 
     def on_key(self, event: events.Key) -> None:
         # self.query_one("#ButtonLog").write(event)
+        ROWS = [
+            ("A", "B", "C", "D", "E", "F", "G"),
+            (" ", " ", " ", " ", " ", " ", " "),
+            ("♙", "♙", "♙", "♙", "♙", "♙", "♙"),
+        ]
+        table = self.query_one(DataTable)
+        table.add_columns(*ROWS[0])
+
+
+        for number, row in enumerate(ROWS[1:], start=1):
+            label = Text(str(number), style="#B0FC38 italic")
+            table.add_row(*row, label=label)
+            table.update_cell_at((0, 0), "")
         pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
+        global play_btn_press, user_move
         l = event.button.label
         self.query_one("#InputLog").write(str(l))
+        play_btn_press = True
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.query_one("#InputLog").write(event.value)
@@ -338,8 +353,10 @@ class Move(Validator):
         return (len(value) == 4) == True
 
 
+global play_btn_press, user_move
 
 if __name__ == "__main__":
+    global play_btn_press, user_move
     parser = argparse.ArgumentParser(description="Just an example",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-matesd", "--mate-scan-depth", help="how far should the model go in checkmate checking?")
@@ -351,7 +368,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config = vars(args)
     print(config)
-    
+
     MATE_SCAN_DEPTH = int(config["mate_scan_depth"])
     MATERIAL_SCAN_DEPTH = int(config["material_scan_depth"])
     USE_STOCKFISH = bool(config["use_stockfish"])
@@ -388,6 +405,11 @@ if __name__ == "__main__":
             board.push(chess.Move.from_uci(player_move))
 
         print_board(board)
+
+        while play_btn_press is not True:
+            pass
+
+        play_btn_press = False
 
         start = time.time()
 
