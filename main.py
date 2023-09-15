@@ -288,6 +288,7 @@ def tablebase_scan(board, movestack):
         pass
 
 
+
 class MyApp(App):
     BINDINGS = [
         Binding(key="q", action="quit", description="Quit the app"),
@@ -304,35 +305,22 @@ class MyApp(App):
                 Static("Standard Buttons", classes="header"),
                 Button("Play"),
                 RichLog(id="InputLog"),
+                DataTable(),
                 Input(
                     placeholder="Enter a move...",
                     validators=[
                         Move(),
                     ],
                 ),
-                DataTable()
             )
         )
 
     def on_key(self, event: events.Key) -> None:
         # self.query_one("#ButtonLog").write(event)
-        ROWS = [
-            ("A", "B", "C", "D", "E", "F", "G"),
-            (" ", " ", " ", " ", " ", " ", " "),
-            ("♙", "♙", "♙", "♙", "♙", "♙", "♙"),
-        ]
-        table = self.query_one(DataTable)
-        table.add_columns(*ROWS[0])
-
-
-        for number, row in enumerate(ROWS[1:], start=1):
-            label = Text(str(number), style="#B0FC38 italic")
-            table.add_row(*row, label=label)
-            table.update_cell_at((0, 0), "")
         pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        global play_btn_press, user_move
+        global play_btn_press, user_move, legal_moves
         l = event.button.label
         self.query_one("#InputLog").write(str(l))
         play_btn_press = True
@@ -340,9 +328,31 @@ class MyApp(App):
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.query_one("#InputLog").write(event.value)
 
+    def on_mount(self) -> None:
+        global play_btn_press, user_move, legal_moves
+        ROWS = [
+            ("A", "B", "C", "D", "E", "F", "G", "H"),
+            ("♖", "♘", "♗", "♔", "♕", "♗", "♘", "♖"),
+            ("♙", "♙", "♙", "♙", "♙", "♙", "♙", "♙"),
+            (" ", " ", " ", " ", " ", " ", " "),
+            (" ", " ", " ", " ", " ", " ", " "),
+            (" ", " ", " ", " ", " ", " ", " "),
+            (" ", " ", " ", " ", " ", " ", " "),
+            ("♟", "♟", "♟", "♟", "♟", "♟", "♟", "♟"),
+            ("♜", "♞", "♝", "♛", "♚", "♝", "♞", "♜"),
+        ]
+        table = self.query_one(DataTable)
+        table.add_columns(*ROWS[0])
+
+        for number, row in enumerate(ROWS[1:], start=1):
+            label = Text(str(number), style="#B0FC38 italic")
+            table.add_row(*row, label=label)
+            table.update_cell_at((0, 0), "")
+
 
 class Move(Validator):
     def validate(self, value: str) -> ValidationResult:
+        global play_btn_press, user_move, legal_moves
         if self.is_move(value):
             return self.success()
         else:
@@ -350,13 +360,18 @@ class Move(Validator):
 
     @staticmethod
     def is_move(value: str) -> bool:
-        return (len(value) == 4) == True
+        global play_btn_press, user_move, legal_moves
+        
+        if len(value) == 4 or len(value) == 5:
+            return (chess.Move.from_uci(value) in legal_moves) == True
+        else:
+            return False
 
 
-global play_btn_press, user_move
+global play_btn_press, user_move, legal_moves
 
 if __name__ == "__main__":
-    global play_btn_press, user_move
+    global play_btn_press, user_move, legal_moves
     parser = argparse.ArgumentParser(description="Just an example",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-matesd", "--mate-scan-depth", help="how far should the model go in checkmate checking?")
@@ -373,7 +388,7 @@ if __name__ == "__main__":
     MATERIAL_SCAN_DEPTH = int(config["material_scan_depth"])
     USE_STOCKFISH = bool(config["use_stockfish"])
     EXPERMENTAL_UI_ENABLE = bool(config["expemental_ui"])
-
+    
     if (EXPERMENTAL_UI_ENABLE):
         app = MyApp()
         asyncio.run(app.run_async())
@@ -389,8 +404,9 @@ if __name__ == "__main__":
 
     running = True
     while running:
+        legal_moves = board.legal_moves
         print_board(board)
-
+        legal_moves = board.legal_moves
         # get user move
         if USE_STOCKFISH:
             result = engine.play(board, chess.engine.Limit(time=0.1))
