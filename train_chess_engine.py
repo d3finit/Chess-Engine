@@ -5,9 +5,6 @@ import pandas as pd
 import numpy as np
 from sklearn.utils import shuffle
 
-
-os.system("git clone https://github.com/iAmEthanMai/chess-games-dataset.git")
-
 path_fischer = './chess-games-dataset/Data/CSV_FISCHER'
 path_morphy = './chess-games-dataset/Data/CSV_MORPHY'
 path_capablanca = './chess-games-dataset/Data/CSV_CAPABLANCA'
@@ -27,14 +24,11 @@ train = pd.concat(li, axis=0, ignore_index=True)
 
 train = shuffle(train)
 
-train.shape
+print(train.shape)
 
 train.head()
 
-"""**features**
-
----
-"""
+print(train.head())
 
 features = list(train.iloc[:, 0:192].columns)
 
@@ -53,11 +47,6 @@ for feature_name in categorical_columns:
 for feature_name in numerical_columns:
   feature_columns.append(tf.feature_column.numeric_column(feature_name,dtype = tf.float32))
 
-"""**input function**
-
----
-"""
-
 def make_input_fn(data_df, label_df, num_epochs = 10, shuffle = True, batch_size = 32):
   def input_function():
     ds = tf.data.Dataset.from_tensor_slices((dict(data_df), label_df))
@@ -66,11 +55,6 @@ def make_input_fn(data_df, label_df, num_epochs = 10, shuffle = True, batch_size
     ds = ds.batch(batch_size).repeat(num_epochs)
     return ds
   return input_function
-
-"""**split data into batches**
-
----
-"""
 
 def split_into_batches(df, batch_size=100000):
   nb_rows = len(df.index)
@@ -93,23 +77,11 @@ def split_into_batches(df, batch_size=100000):
 
 batches_X, batches_y = split_into_batches(train)
 
-"""**model**
-
----
-"""
-
-linear_est = tf.estimator.LinearClassifier(feature_columns = feature_columns, model_dir='./estimator')
-
-"""**train model**
-
----
-"""
+linear_est = tf.estimator.LinearClassifier(feature_columns = feature_columns, model_dir='.\\estimator\\')
 
 input_functions = []
 for df_X, df_y in zip(batches_X, batches_y):
   input_functions.append(make_input_fn(df_X, df_y))
-
-len(input_functions)
 
 # train the model on all the input functions
 i = 1
@@ -131,5 +103,5 @@ for input_function in input_functions:
 serving_input_fn = tf.estimator.export.build_parsing_serving_input_receiver_fn(
   tf.feature_column.make_parse_example_spec(feature_columns))
 
-estimator_base_path = './estimator'
+estimator_base_path = '.\\estimator\\'
 estimator_path = linear_est.export_saved_model(estimator_base_path, serving_input_fn)
