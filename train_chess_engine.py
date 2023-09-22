@@ -98,7 +98,7 @@ batches_X, batches_y = split_into_batches(train)
 ---
 """
 
-linear_est = tf.estimator.LinearClassifier(feature_columns = feature_columns, model_dir='./estimator')
+linear_est = tf.estimator.LinearClassifier(feature_columns = feature_columns, model_dir='.\\estimator\\')
 
 """**train model**
 
@@ -131,5 +131,5 @@ for input_function in input_functions:
 serving_input_fn = tf.estimator.export.build_parsing_serving_input_receiver_fn(
   tf.feature_column.make_parse_example_spec(feature_columns))
 
-estimator_base_path = './estimator'
+estimator_base_path = '.\\estimator\\'
 estimator_path = linear_est.export_saved_model(estimator_base_path, serving_input_fn)
