@@ -16,7 +16,7 @@ import threading
 import _thread
 import time
 import sys
-
+import NN
 from Console import *
 from Utils import sort_tuple, convert_to_int, print_board, get_material  # local lib for stuff
 
@@ -356,6 +356,12 @@ if __name__ == "__main__":
             with chess.polyglot.open_reader("./polygot_openings/" + os.listdir("./polygot_openings/")[i]) as reader:
                 for entry in reader.find_all(board):
                     allmoves.append([entry.move, entry.weight])
+
+        x = NN.ai_play_turn(board)
+        if x in board.legal_moves:
+            allmoves.append([x, 1000000])
+        
+        print(f"NN move: {x}")
 
         reccomended_moves = sort_tuple(allmoves)
         reccomended_moves.reverse()

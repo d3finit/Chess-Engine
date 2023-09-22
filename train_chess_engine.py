@@ -5,18 +5,16 @@ import pandas as pd
 import numpy as np
 from sklearn.utils import shuffle
 
-path_fischer = './chess-games-dataset/Data/CSV_FISCHER'
-path_morphy = './chess-games-dataset/Data/CSV_MORPHY'
-path_capablanca = './chess-games-dataset/Data/CSV_CAPABLANCA'
+path = './raw_csv_training_data'
 
-files_fischer = glob.glob(path_fischer + "/*.csv")
+files = glob.glob(path + "/*.csv")
 #files_morphy = glob.glob(path_morphy + "/*.csv")
 #files_capablanca = glob.glob(path_capablanca + "/*.csv")
 
 
 li = []
 
-for filename in files_fischer:
+for filename in files:
     df = pd.read_csv(filename, index_col=None, header=0)
     li.append(df)
 
@@ -90,7 +88,7 @@ j = 1
 for input_function in input_functions:
   j += 1
 
-print(j)
+print(f"Total epochs required to train {str(j)}")
 
 for input_function in input_functions:
   print('<======================================== NEW BATCH ========================================>')
