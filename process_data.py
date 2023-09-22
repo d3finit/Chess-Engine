@@ -56,6 +56,8 @@ def process_game_data(direname, filename):
     pgn = open(game_path)
     game = chess.pgn.read_game(pgn)
 
+    print(filename)
+
     result = {'1-0': True, '1/2-1/2': None, '0-1': False}[game.headers['Result']] 
 
     global white_won
@@ -88,7 +90,7 @@ def process_game_data(direname, filename):
     print(df.shape)
 
     new_filename = filename.replace('pgn', 'csv')
-    new_dirname = '/Users/ethan/Desktop/chess-engine/Data/CSV_BOTVINNIK'
+    new_dirname = './raw_csv_training_data/'
     new_path = os.path.join(new_dirname, new_filename)
 
     df.to_csv(new_path, index = False)
@@ -97,7 +99,7 @@ def process_game_data(direname, filename):
 
 
 
-for dirname, _, filenames in os.walk('/Users/ethan/Desktop/chess-engine/Data/PGN/Raw_game/Raw_game/Botvinnik'):
+for dirname, _, filenames in os.walk('./raw_training_data/'):
     for filename in filenames:
         process_game_data(dirname, filename)
 
