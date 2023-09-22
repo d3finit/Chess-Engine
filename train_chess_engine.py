@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 from sklearn.utils import shuffle
 
-path = './raw_csv_training_data'
+path = './raw_csv_training_data/'
 
 files = glob.glob(path + "/*.csv")
 #files_morphy = glob.glob(path_morphy + "/*.csv")
