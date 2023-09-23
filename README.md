@@ -81,11 +81,7 @@
 
 
 <!-- ABOUT THE PROJECT -->
-## About The Project
 
-[![Product Name Screen Shot][product-screenshot]](https://example.com)
-
-Here's a blank template to get started: To avoid retyping too much info. Do a search and replace with your text editor for the following: `d3finit`, `chess-engine`, `twitter_handle`, `linkedin_username`, `email_client`, `email`, `Chess Engine`, `a chess engine made with python, tensorflow, and python-chess`
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -93,14 +89,9 @@ Here's a blank template to get started: To avoid retyping too much info. Do a se
 
 ### Built With
 
-* [![Next][Next.js]][Next-url]
-* [![React][React.js]][React-url]
-* [![Vue][Vue.js]][Vue-url]
-* [![Angular][Angular.io]][Angular-url]
-* [![Svelte][Svelte.dev]][Svelte-url]
-* [![Laravel][Laravel.com]][Laravel-url]
-* [![Bootstrap][Bootstrap.com]][Bootstrap-url]
-* [![JQuery][JQuery.com]][JQuery-url]
+* python
+* python-chess
+* tensorflow
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -108,9 +99,6 @@ Here's a blank template to get started: To avoid retyping too much info. Do a se
 
 <!-- GETTING STARTED -->
 ## Getting Started
-
-This is an example of how you may give instructions on setting up your project locally.
-To get a local copy up and running follow these steps.
 
 ### Prerequisites
 
