@@ -7,7 +7,7 @@ import numpy as np
 import tensorflow as tf
 from IPython.display import clear_output
 
-path_to_model = '.\\estimator\\1695330408'
+path_to_model = '.\\estimator\\1695407429'
 
 global model
 model = tf.saved_model.load(path_to_model)
