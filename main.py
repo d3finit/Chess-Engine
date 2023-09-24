@@ -16,10 +16,10 @@ import threading
 import _thread
 import time
 import sys
-import NN
 from Console import *
 from Utils import sort_tuple, convert_to_int, print_board, get_material  # local lib for stuff
 
+import NN
 
 class TimeoutException(Exception):
     def __init__(self, msg=''):
@@ -281,11 +281,12 @@ def tablebase_scan(board, movestack):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Just an example",
+    parser = argparse.ArgumentParser(description="",
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-matesd", "--mate-scan-depth", help="how far should the model go in checkmate checking?")
     parser.add_argument("-materialsd", "--material-scan-depth",
                         help="how far should the model go in material gain/loss checking?")
+    parser.add_argument("-nn", "--use-neural-network", action="store_true", help="Enable the neural network?")
     parser.add_argument("-sf", "--use-stockfish", action="store_true", help="have the engine play stockfish?")
 
     args = parser.parse_args()
@@ -295,6 +296,7 @@ if __name__ == "__main__":
     MATE_SCAN_DEPTH = int(config["mate_scan_depth"])
     MATERIAL_SCAN_DEPTH = int(config["material_scan_depth"])
     USE_STOCKFISH = bool(config["use_stockfish"])
+    USE_NN = bool(config["use_neural_network"])
 
     computer_moves = 0
     engine = chess.engine.SimpleEngine.popen_uci(r".\stockfish\stockfish-windows-x86-64-avx2.exe")
@@ -317,11 +319,15 @@ if __name__ == "__main__":
         elif not USE_STOCKFISH:
             player_move = Prompt.ask("Enter your move (UCI format, enter to have Stockfish16 play.)")
 
+            if len(player_move) == 4 or len(player_move) == 5:
+                while chess.Move.from_uci(player_move) not in board.legal_moves:
+                    player_move = Prompt.ask("Enter your move (UCI)")
+                    first_game.add_variation(chess.Move.from_uci(player_move))
+                    board.push(chess.Move.from_uci(player_move))
 
-            while chess.Move.from_uci(player_move) not in board.legal_moves:
-                player_move = Prompt.ask("Enter your move (UCI)")
-            first_game.add_variation(chess.Move.from_uci(player_move))
-            board.push(chess.Move.from_uci(player_move))
+            elif len(player_move) == 0:
+                result = engine.play(board, chess.engine.Limit(time=0.1))
+                board.push(result.move)
 
 
         print_board(board)
