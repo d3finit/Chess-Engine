@@ -4,428 +4,464 @@
 # GNU GPL v3.0
 # ------------------------------------
 
+import chess
+import chess.svg
+from collections import OrderedDict
+from operator import itemgetter
+import pandas as pd
+import numpy as np
+import tensorflow as tf
 import os
-import time
+import Utils
 
-import chess, chess.engine, chess.pgn, chess.polyglot, chess.svg, chess.gaviota
-from rich.progress import track, Progress
-from rich.prompt import Prompt
-import argparse, csv
-from contextlib import contextmanager
-import threading
-import _thread
-import time
-import sys
-import NN
-from Console import *
-from Utils import sort_tuple, convert_to_int, print_board, get_material  # local lib for stuff
+path_to_model = "./estimator/1695586778"
+
+global model
+model = tf.saved_model.load(path_to_model)
 
 
-class TimeoutException(Exception):
-    def __init__(self, msg=''):
-        self.msg = msg
-
-@contextmanager
-def time_limit(seconds, msg=''):
-    timer = threading.Timer(seconds, lambda: _thread.interrupt_main())
-    timer.start()
-    try:
-        yield
-    except KeyboardInterrupt:
-        raise TimeoutException("Timed out for operation {}".format(msg))
-    finally:
-        # if the action ends in specified time, timer is canceled
-        timer.cancel()
-
-
-def is_piece_hang(board, move):
-    ori_material = get_material(board)
-    board.push(move)
-    with_move_material = get_material(board)
-
-    for m1 in board.legal_moves:
-        temp_board = board
-        temp_board.push(m1)
-        tb_material = get_material(temp_board)
-        for m2 in temp_board.legal_moves:
-            tb2 = temp_board
-            tb2.push(m2)
-            tb2_material = get_material(tb2)
-
-            if ori_material - with_move_material <= tb2_material:
-                return False
+def predict(df_eval, imported_model):
+    col_names = df_eval.columns
+    dtypes = df_eval.dtypes
+    predictions = []
+    for row in df_eval.iterrows():
+        example = tf.train.Example()
+        for i in range(len(col_names)):
+            dtype = dtypes[i]
+            col_name = col_names[i]
+            value = row[1][col_name]
+            if dtype == "object":
+                value = bytes(value, "utf-8")
+                example.features.feature[col_name].bytes_list.value.extend([value])
+            elif dtype == "float":
+                example.features.feature[col_name].float_list.value.extend([value])
+            elif dtype == "int":
+                example.features.feature[col_name].int64_list.value.extend([value])
+        predictions.append(
+            imported_model.signatures["predict"](
+                examples=tf.constant([example.SerializeToString()])
+            )
+        )
+    return predictions
 
 
-def new_recurse_checkmate(board, movestack, depth):
-    if depth > 0:
-        for temp_move in board.legal_moves:
-            get_material(board)
-
-            temp_board = chess.Board()
-            temp_board.set_fen(board.fen())
-
-            temp_board.push(temp_move)
-
-            if temp_board.is_checkmate():
-                movestack.append([temp_move, 10000])
-            elif temp_board.is_stalemate() or temp_board.is_fifty_moves() or temp_board.is_seventyfive_moves() or temp_board.is_fivefold_repetition():
-                pass
-            else:
-                try:
-                    movestack = movestack + new_recurse_checkmate(board, movestack, depth - 1)
-                except RecursionError:
-                    print("RecursionError " + str(depth))
-
-    return movestack
+def get_board_features(board):
+    board_features = []
+    for square in chess.SQUARES:
+        board_features.append(str(board.piece_at(square)))
+    return board_features
 
 
-def new_recurse_material(board, movestack, depth, pathisgood):
-    if depth > 0:
-        if depth > 2 and pathisgood is not True:
-            pass
-        elif depth > 2 and pathisgood is True:
-            for temp_move in board.legal_moves:
-                get_material(board)
+def get_move_features(move):
+    from_ = np.zeros(64)
+    to_ = np.zeros(64)
+    from_[move.from_square] = 1
+    to_[move.to_square] = 1
+    return from_, to_
 
-                temp_board = chess.Board()
-                temp_board.set_fen(board.fen())
 
-                temp_board.push(temp_move)
-                # print(temp_board)
-                # input("")
+def get_possible_moves_data(current_board):
+    data = []
+    moves = list(current_board.legal_moves)
+    for move in moves:
+        from_square, to_square = get_move_features(move)
+        row = np.concatenate(
+            (get_board_features(current_board), from_square, to_square)
+        )
+        data.append(row)
 
-                if get_material(temp_board) > get_material(board):
-                    pathisgood = True
-                    movestack.append([temp_move, get_material(temp_board) * 100])
+    board_feature_names = chess.SQUARE_NAMES
+    move_from_feature_names = ["from_" + square for square in chess.SQUARE_NAMES]
+    move_to_feature_names = ["to_" + square for square in chess.SQUARE_NAMES]
 
-                else:
-                    pathisgood = False
+    columns = board_feature_names + move_from_feature_names + move_to_feature_names
 
-                x3 = new_recurse_material(board, movestack, depth - 1, pathisgood)
-                if x3 is not None:
-                    movestack = movestack + x3
+    df = pd.DataFrame(data=data, columns=columns)
+
+    for column in move_from_feature_names:
+        df[column] = df[column].astype(float)
+    for column in move_to_feature_names:
+        df[column] = df[column].astype(float)
+    return df
+
+
+def find_best_moves(current_board, model, proportion=0.5):
+    moves = list(current_board.legal_moves)
+    df_eval = get_possible_moves_data(current_board)
+    predictions = predict(df_eval, model)
+    good_move_probas = []
+
+    for prediction in predictions:
+        proto_tensor = tf.make_tensor_proto(prediction["probabilities"])
+        proba = tf.make_ndarray(proto_tensor)[0][1]
+        good_move_probas.append(proba)
+
+    dict_ = dict(zip(moves, good_move_probas))
+    dict_ = OrderedDict(sorted(dict_.items(), key=itemgetter(1), reverse=True))
+
+    best_moves = list(dict_.keys())
+
+    return best_moves[0 : int(len(best_moves) * proportion)]
+
+
+pawn_white_eval = np.array(
+    [
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0],
+        [1.0, 1.0, 2.0, 3.0, 3.0, 2.0, 1.0, 1.0],
+        [0.5, 0.5, 1.0, 2.5, 2.5, 1.0, 0.5, 0.5],
+        [0.0, 0.0, 0.0, 2.0, 2.0, 0.0, 0.0, 0.0],
+        [0.5, -0.5, -1.0, 0.0, 0.0, -1.0, -0.5, 0.5],
+        [0.5, 1.0, 1.0, -2.0, -2.0, 1.0, 1.0, 0.5],
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ],
+    float,
+)
+
+pawn_black_eval = pawn_white_eval[::-1]
+
+
+knight_white_eval = np.array(
+    [
+        [-5.0, -4.0, -3.0, -3.0, -3.0, -3.0, -4.0, -5.0],
+        [-4.0, -2.0, 0.0, 0.0, 0.0, 0.0, -2.0, -4.0],
+        [-3.0, 0.0, 1.0, 1.5, 1.5, 1.0, 0.0, -3.0],
+        [-3.0, 0.5, 1.5, 2.0, 2.0, 1.5, 0.5, -3.0],
+        [-3.0, 0.0, 1.5, 2.0, 2.0, 1.5, 0.0, -3.0],
+        [-3.0, 0.5, 1.0, 1.5, 1.5, 1.0, 0.5, -3.0],
+        [-4.0, -2.0, 0.0, 0.5, 0.5, 0.0, -2.0, -4.0],
+        [-5.0, -4.0, -3.0, -3.0, -3.0, -3.0, -4.0, -5.0],
+    ],
+    float,
+)
+
+knight_black_eval = knight_white_eval[::-1]
+
+
+bishop_white_eval = np.array(
+    [
+        [-2.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -2.0],
+        [-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0],
+        [-1.0, 0.0, 0.5, 1.0, 1.0, 0.5, 0.0, -1.0],
+        [-1.0, 0.5, 0.5, 1.0, 1.0, 0.5, 0.5, -1.0],
+        [-1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0, -1.0],
+        [-1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, -1.0],
+        [-1.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.5, -1.0],
+        [-2.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -2.0],
+    ],
+    float,
+)
+
+bishop_black_eval = bishop_white_eval[::-1]
+
+
+rook_white_eval = np.array(
+    [
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5],
+        [-0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5],
+        [-0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5],
+        [-0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5],
+        [-0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5],
+        [-0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -0.5],
+        [0.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.0],
+    ],
+    float,
+)
+
+rook_black_eval = rook_white_eval[::-1]
+
+
+queen_white_eval = np.array(
+    [
+        [-2.0, -1.0, -1.0, -0.5, -0.5, -1.0, -1.0, -2.0],
+        [-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0],
+        [-1.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.0, -1.0],
+        [-0.5, 0.0, 0.5, 0.5, 0.5, 0.5, 0.0, -0.5],
+        [0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.0, -0.5],
+        [-1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.0, -1.0],
+        [-1.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, -1.0],
+        [-2.0, -1.0, -1.0, -0.5, -0.5, -1.0, -1.0, -2.0],
+    ],
+    float,
+)
+
+queen_black_eval = queen_white_eval[::-1]
+
+
+king_white_eval = np.array(
+    [
+        [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
+        [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
+        [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
+        [-3.0, -4.0, -4.0, -5.0, -5.0, -4.0, -4.0, -3.0],
+        [-2.0, -3.0, -3.0, -4.0, -4.0, -3.0, -3.0, -2.0],
+        [-1.0, -2.0, -2.0, -2.0, -2.0, -2.0, -2.0, -1.0],
+        [2.0, 2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 2.0],
+        [2.0, 3.0, 1.0, 0.0, 0.0, 1.0, 3.0, 2.0],
+    ],
+    float,
+)
+
+king_black_eval = king_white_eval[::-1]
+
+
+def square_to_coord(square):
+    return {
+        0: (7, 0),
+        1: (7, 1),
+        2: (7, 2),
+        3: (7, 3),
+        4: (7, 4),
+        5: (7, 5),
+        6: (7, 6),
+        7: (7, 7),
+        8: (6, 0),
+        9: (6, 1),
+        10: (6, 2),
+        11: (6, 3),
+        12: (6, 4),
+        13: (6, 5),
+        14: (6, 6),
+        15: (6, 7),
+        16: (5, 0),
+        17: (5, 1),
+        18: (5, 2),
+        19: (5, 3),
+        20: (5, 4),
+        21: (5, 5),
+        22: (5, 6),
+        23: (5, 7),
+        24: (4, 0),
+        25: (4, 1),
+        26: (4, 2),
+        27: (4, 3),
+        28: (4, 4),
+        29: (4, 5),
+        30: (4, 6),
+        31: (4, 7),
+        32: (3, 0),
+        33: (3, 1),
+        34: (3, 2),
+        35: (3, 3),
+        36: (3, 4),
+        37: (3, 5),
+        38: (3, 6),
+        39: (3, 7),
+        40: (2, 0),
+        41: (2, 1),
+        42: (2, 2),
+        43: (2, 3),
+        44: (2, 4),
+        45: (2, 5),
+        46: (2, 6),
+        47: (2, 7),
+        48: (1, 0),
+        49: (1, 1),
+        50: (1, 2),
+        51: (1, 3),
+        52: (1, 4),
+        53: (1, 5),
+        54: (1, 6),
+        55: (1, 7),
+        56: (0, 0),
+        57: (0, 1),
+        58: (0, 2),
+        59: (0, 3),
+        60: (0, 4),
+        61: (0, 5),
+        62: (0, 6),
+        63: (0, 7),
+    }[square]
+
+
+def get_piece_value(piece, square):
+    x, y = square_to_coord(square)
+
+    if ai_white:
+        sign_white = -1
+        sign_black = 1
     else:
-        return movestack
+        sign_white = 1
+        sign_black = -1
+
+    if piece == "None":
+        return 0
+    elif piece == "P":
+        return sign_white * (10 + pawn_white_eval[x][y])
+    elif piece == "N":
+        return sign_white * (30 + knight_white_eval[x][y])
+    elif piece == "B":
+        return sign_white * (30 + bishop_white_eval[x][y])
+    elif piece == "R":
+        return sign_white * (50 + rook_white_eval[x][y])
+    elif piece == "Q":
+        return sign_white * (90 + queen_white_eval[x][y])
+    elif piece == "K":
+        return sign_white * (900 + king_white_eval[x][y])
+    elif piece == "p":
+        return sign_black * (10 + pawn_black_eval[x][y])
+    elif piece == "n":
+        return sign_black * (30 + knight_black_eval[x][y])
+    elif piece == "b":
+        return sign_black * (30 + bishop_black_eval[x][y])
+    elif piece == "r":
+        return sign_black * (50 + rook_black_eval[x][y])
+    elif piece == "q":
+        return sign_black * (90 + queen_black_eval[x][y])
+    elif piece == "k":
+        return sign_black * (900 + king_black_eval[x][y])
 
 
 def evaluate_board(board):
-    score = 0
-    r1 = ["a", "b", "c", "d", "e", "f", "g", "h"]
-    r2 = ["1", "2", "3", "4", "5", "6", "7", "8"]
-    databoard = [
-        ["a8", "b8", "c8", "d8", "e8", "f8", "g8"],
-        ["a7", "b7", "c7", "d7", "e7", "f7", "g7"],
-        ["a6", "b6", "c6", "d6", "e6", "f6", "g6"],
-        ["a5", "b5", "c5", "d5", "e5", "f5", "g5"],
-        ["a4", "b4", "c4", "d4", "e4", "f4", "g4"],
-        ["a3", "b3", "c3", "d3", "e3", "f3", "g3"],
-        ["a2", "b2", "c2", "d2", "e2", "f2", "g2"],
-        ["a1", "b1", "c1", "d1", "e1", "f1", "g1"],
-    ]
-
-    pawn_score_map = [
-        [0, 0, 0, 0, 0, 0, 0, 0],
-        [50, 50, 50, 50, 50, 50, 50, 50],
-        [10, 10, 20, 30, 30, 20, 10, 10],
-        [5, 5, 10, 25, 25, 10, 5, 5],
-        [0, 0, 0, 20, 20, 0, 0, 0],
-        [5, -5, -10, 0, 0, -10, -5, 5],
-        [5, 10, 10, -20, -20, 10, 10, 5],
-        [0, 0, 0, 0, 0, 0, 0, 0]
-    ]
-
-    knight_score_map = [
-        [-50, -40, -30, -30, -30, -30, -40, -50],
-        [-40, -20, 0, 0, 0, 0, -20, -40],
-        [-30, 0, 10, 15, 15, 10, 0, -30],
-        [-30, 5, 15, 20, 20, 15, 5, -30],
-        [-30, 0, 15, 20, 20, 15, 0, -30],
-        [-30, 5, 10, 15, 15, 10, 5, -30],
-        [-40, -20, 0, 5, 5, 0, -20, -40],
-        [-50, -40, -30, -30, -30, -30, -40, -50],
-    ]
-
-    bishop_score_map = [
-        [-20, -10, -10, -10, -10, -10, -10, -20],
-        [-10, 0, 0, 0, 0, 0, 0, -10],
-        [-10, 0, 5, 10, 10, 5, 0, -10],
-        [-10, 5, 5, 10, 10, 5, 5, -10],
-        [-10, 0, 10, 10, 10, 10, 0, -10],
-        [-10, 10, 10, 10, 10, 10, 10, -10],
-        [-10, 5, 0, 0, 0, 0, 5, -10],
-        [-20, -10, -10, -10, -10, -10, -10, -20],
-    ]
-
-    rook_score_map = [
-        [0, 0, 0, 0, 0, 0, 0, 0],
-        [5, 10, 10, 10, 10, 10, 10, 5],
-        [-5, 0, 0, 0, 0, 0, 0, -5],
-        [-5, 0, 0, 0, 0, 0, 0, -5],
-        [-5, 0, 0, 0, 0, 0, 0, -5],
-        [-5, 0, 0, 0, 0, 0, 0, -5],
-        [-5, 0, 0, 0, 0, 0, 0, -5],
-        [0, 0, 0, 5, 5, 0, 0, 0]
-    ]
-
-    queen_score_map = [
-        [-20, -10, -10, -5, -5, -10, -10, -20],
-        [-10, 0, 0, 0, 0, 0, 0, -10],
-        [-10, 0, 5, 5, 5, 5, 0, -10],
-        [-5, 0, 5, 5, 5, 5, 0, -5],
-        [0, 0, 5, 5, 5, 5, 0, -5],
-        [-10, 5, 5, 5, 5, 5, 0, -10],
-        [-10, 0, 5, 0, 0, 0, 0, -10],
-        [-20, -10, -10, -5, -5, -10, -10, -20]
-    ]
-
-    for i in range(len(pawn_score_map)):
-        pawn_score_map[i] = list(reversed(pawn_score_map[i]))
-    pawn_score_map = list(reversed(pawn_score_map))
-
-    for i in range(len(knight_score_map)):
-        knight_score_map[i] = list(reversed(knight_score_map[i]))
-    knight_score_map = list(reversed(knight_score_map))
-
-    for i in range(len(bishop_score_map)):
-        bishop_score_map[i] = list(reversed(bishop_score_map[i]))
-    bishop_score_map = list(reversed(bishop_score_map))
-
-    for i in range(len(rook_score_map)):
-        rook_score_map[i] = list(reversed(rook_score_map[i]))
-    rook_score_map = list(reversed(rook_score_map))
-
-    for i in range(len(queen_score_map)):
-        queen_score_map[i] = list(reversed(queen_score_map[i]))
-    queen_score_map = list(reversed(queen_score_map))
+    evaluation = 0
+    for square in chess.SQUARES:
+        piece = str(board.piece_at(square))
+        evaluation = evaluation + get_piece_value(piece, square)
+    return evaluation
 
 
-    for i in range(len(databoard)):
-        for j in range(len(databoard[i])):
-            piece = board.piece_at(chess.parse_square(databoard[i][j]))
-            if piece is not None:
-                if piece.symbol().lower() == "p":
-                    if piece.symbol() == "P":
-                        score = score - pawn_score_map[i][j]
-                    else:
-                        score = score + pawn_score_map[i][j]
+def minimax(depth, board, alpha, beta, is_maximising_player):
 
-                if piece.symbol().lower() == "n":
-                    if piece.symbol() == "N":
-                        score = score - knight_score_map[i][j]
-                    else:
-                        score = score + knight_score_map[i][j]
+    if depth == 0:
+        return -evaluate_board(board)
+    elif depth > 3:
+        legal_moves = find_best_moves(board, model, 0.75)
+    else:
+        legal_moves = list(board.legal_moves)
 
-                if piece.symbol().lower() == "b":
-                    if piece.symbol() == "B":
-                        score = score - bishop_score_map[i][j]
-                    else:
-                        score = score + bishop_score_map[i][j]
-
-                if piece.symbol().lower() == "r":
-                    if piece.symbol() == "R":
-                        score = score - rook_score_map[i][j]
-                    else:
-                        score = score + rook_score_map[i][j]
-
-                if piece.symbol().lower() == "q":
-                    if piece.symbol() == "R":
-                        score = score - queen_score_map[i][j]
-                    else:
-                        score = score + queen_score_map[i][j]
-
-
-    return score
-
-
-def move_eval_thing(board, movestack):
-    for temp_move in board.legal_moves:
-        get_material(board)
-
-        temp_board = chess.Board()
-        temp_board.set_fen(board.fen())
-
-        temp_board.push(temp_move)
-        # print(temp_board)
-        # input("")
-        x = evaluate_board(temp_board)
-        # print(x)
-        # print(temp_board)
-        # input("")
-        if x > evaluate_board(board):
-            # print(x)
-            movestack.append([temp_move, x])
-
-    return movestack
+    if is_maximising_player:
+        best_move = -9999
+        for move in legal_moves:
+            board.push(move)
+            best_move = max(
+                best_move,
+                minimax(depth - 1, board, alpha, beta, not is_maximising_player),
+            )
+            board.pop()
+            alpha = max(alpha, best_move)
+            if beta <= alpha:
+                return best_move
+        return best_move
+    else:
+        best_move = 9999
+        for move in legal_moves:
+            board.push(move)
+            best_move = min(
+                best_move,
+                minimax(depth - 1, board, alpha, beta, not is_maximising_player),
+            )
+            board.pop()
+            beta = min(beta, best_move)
+            if beta <= alpha:
+                return best_move
+        return best_move
 
 
-def tablebase_scan(board, movestack):
-    try:
-        print("loading tablebase")
-        with chess.gaviota.open_tablebase("tablebases") as tablebase:
-            print("loaded")
-            for temp_move in board.legal_moves:
-                print(temp_move)
-                get_material(board)
+def minimax_root(depth, board, is_maximising_player=True):
+    # only search the top 50% moves
+    legal_moves = find_best_moves(board, model)
+    best_move = -9999
+    best_move_found = None
 
-                temp_board = chess.Board()
-                temp_board.set_fen(board.fen())
-
-                temp_board.push(temp_move)
-                # print(temp_board)
-                # input("")
-
-                if tablebase.probe_wdl(temp_board) >= tablebase.probe_wdl(board):
-                    movestack.append([temp_move, 100000])
-    except KeyError:
-        pass
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Just an example",
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-matesd", "--mate-scan-depth", help="how far should the model go in checkmate checking?")
-    parser.add_argument("-materialsd", "--material-scan-depth",
-                        help="how far should the model go in material gain/loss checking?")
-    parser.add_argument("-sf", "--use-stockfish", action="store_true", help="have the engine play stockfish?")
-
-    args = parser.parse_args()
-    config = vars(args)
-    print(config)
-
-    MATE_SCAN_DEPTH = int(config["mate_scan_depth"])
-    MATERIAL_SCAN_DEPTH = int(config["material_scan_depth"])
-    USE_STOCKFISH = bool(config["use_stockfish"])
-
-    computer_moves = 0
-    engine = chess.engine.SimpleEngine.popen_uci(r".\stockfish\stockfish-windows-x86-64-avx2.exe")
-
-    pgn = open("CurrentGame.pgn")
-    first_game = chess.pgn.read_game(pgn)
-    board = first_game.board()
-    for move in first_game.mainline_moves():
+    for move in legal_moves:
         board.push(move)
+        value = minimax(depth - 1, board, -10000, 10000, not is_maximising_player)
+        board.pop()
+        if value >= best_move:
+            best_move = value
+            best_move_found = move
 
-    running = True
-    while running:
-        print_board(board)
-
-        # get user move
-        if USE_STOCKFISH:
-            result = engine.play(board, chess.engine.Limit(time=0.1))
-            board.push(result.move)
-
-        elif not USE_STOCKFISH:
-            player_move = Prompt.ask("Enter your move (UCI format, enter to have Stockfish16 play.)")
+    return best_move_found
 
 
-            while chess.Move.from_uci(player_move) not in board.legal_moves:
-                player_move = Prompt.ask("Enter your move (UCI)")
-            first_game.add_variation(chess.Move.from_uci(player_move))
-            board.push(chess.Move.from_uci(player_move))
+def draw_board(current_board):
+    Utils.print_board(current_board)
 
 
-        print_board(board)
-
-        start = time.time()
-
-        # begin the engine
-        allmoves = []
-        blocked_moves = []
-        try:
-            with time_limit(5, 'sleep'):
-                x1 = new_recurse_checkmate(board, allmoves, MATE_SCAN_DEPTH)
-                if x1 is not None:
-                    allmoves = allmoves + x1
-
-                x2 = new_recurse_material(board, allmoves, MATERIAL_SCAN_DEPTH, True)
-                if x2 is not None:
-                    allmoves = allmoves + x2
-
-                x3 = tablebase_scan(board, allmoves)
-                if x3 is not None:
-                    allmoves = allmoves + x3
-
-                x4 = move_eval_thing(board, allmoves)
-                if x4 is not None:
-                    allmoves = allmoves + x4
-        except TimeoutException:
-            print("TIMES UP")
-
-        # check the polygot books for openings
-        for i in track(range(len(os.listdir("./polygot_openings/"))), description="Loading polygot_openings..."):
-            with chess.polyglot.open_reader("./polygot_openings/" + os.listdir("./polygot_openings/")[i]) as reader:
-                for entry in reader.find_all(board):
-                    allmoves.append([entry.move, entry.weight])
-
-        x = NN.ai_play_turn(board)
-        if x in board.legal_moves:
-            allmoves.append([x, 1000000])
-        
-        print(f"NN move: {x}")
-
-        reccomended_moves = sort_tuple(allmoves)
-        reccomended_moves.reverse()
-        try:
-            first_game.add_variation(chess.Move.from_uci(str(reccomended_moves[0][0])))
-            board.push(chess.Move.from_uci(str(reccomended_moves[0][0])))
-        except IndexError:
-            print("Ran out of moves")
-            result = engine.analyse(board, chess.engine.Limit(time=1))
-            print(result["score"].black())
+def can_checkmate(move, current_board):
+    fen = current_board.fen()
+    future_board = chess.Board(fen)
+    future_board.push(move)
+    return future_board.is_checkmate()
 
 
+def ai_play_turn(current_board):
+    draw_board(current_board)
+    print("\n")
+    print("Engine is thinking...")
+    for move in current_board.legal_moves:
+        if can_checkmate(move, current_board):
+            current_board.push(move)
+            return
 
-        # engine move
-        reccomended_moves = sort_tuple(allmoves)
-        reccomended_moves.reverse()
-        if board.legal_moves.count() == 0:
-            if len(reccomended_moves) < 0:
-                for move in board.legal_moves:
-                    if move in blocked_moves:
-                        pass
+    nb_moves = len(list(current_board.legal_moves))
 
-                    else:
-                        first_game.add_variation(move)
-                        board.push(move)
-                        move = move.uci()
-                        print(move.uci())
-                        print_board(board)
-                        print(move.uci())
-                        break
-                else:
-                    for move2 in reccomended_moves:
-                        if not is_piece_hang(board, reccomended_moves[i][0]):
-                            move = str(reccomended_moves[0][0])
-                            first_game.add_variation(chess.Move.from_uci(str(reccomended_moves[0][0])))
-                            board.push(chess.Move.from_uci(str(reccomended_moves[0][0])))
-                            print_board(board)
-                            print(move)
-                            break
+    if nb_moves > 30:
+        current_board.push(minimax_root(4, current_board))
+    elif nb_moves > 10 and nb_moves <= 30:
+        current_board.push(minimax_root(5, current_board))
+    else:
+        current_board.push(minimax_root(7, current_board))
+    return
 
 
-        print_board(board)
-        # print(move.uci())
+def human_play_turn(current_board):
+    os.system("cls")
+    draw_board(current_board)
+    print("\n")
+    print("\n")
+    print("number moves: " + str(len(current_board.move_stack)))
+    move_uci = input("Enter your move (UCI): ")
 
-        if (len(reccomended_moves) >= 1):
-            move = str(reccomended_moves[0][0])
+    try:
+        move = chess.Move.from_uci(move_uci)
+    except:
+        return human_play_turn(current_board)
+    if move not in current_board.legal_moves:
+        return human_play_turn(current_board)
+    current_board.push(move)
+    return
+
+
+def play_game(turn, current_board):
+    if current_board.is_stalemate():
+        os.system("cls")
+        print("Stalemate:")
+        return
+    else:
+        if not turn:
+            if not current_board.is_checkmate():
+                human_play_turn(current_board)
+                return play_game(not turn, current_board)
+            else:
+                os.system("cls")
+                draw_board(current_board)
+                print("Engine wins")
+                return
         else:
-            move = "NONE"
+            if not current_board.is_checkmate():
+                ai_play_turn(current_board)
+                return play_game(not turn, current_board)
+            else:
+                os.system("cls")
+                draw_board(current_board)
+                print("User wins")
+                return
 
-        print(f"Computer move: {move}")
-        end = time.time()
-        computer_moves += 1
-        print(f"Computer took: " + str(end - start))
 
-        if board.outcome() is not None:
-            print(board.outcome().termination)
-            print("385: game over.")
-            # print(first_game)
-            with open('data.csv', 'a', newline='\n') as file:
-                writer = csv.writer(file)
-                writer.writerow([board.outcome().termination, board.fen()])
+def play():
+    global ai_white
+    ai_white = True
 
-            running = False
-            try:
-                os.system("python3 .\main.py -matesd 1 -materialsd 1 -sf")
-            except KeyboardInterrupt:
-                sys.exit()
+    board = chess.Board()
+    human_first = input("User start? [y/n]: ")
+    os.system("cls")
+    if human_first == "y":
+        ai_white = False
+        return play_game(False, board)
+    else:
+        return play_game(True, board)
+
+
+play()
