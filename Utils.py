@@ -50,7 +50,7 @@ def get_material(board_to_get):
 
 # prints a formatted board
 def print_board(board_to_convert):
-    # clear()
+    clear()
     if get_material(board_to_convert) <= -1:
         print(f"Black is up {get_material(board_to_convert) * -1}")
     elif get_material(board_to_convert) >= 1:
