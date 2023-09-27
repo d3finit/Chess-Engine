@@ -14,7 +14,7 @@ import tensorflow as tf
 import os
 import Utils
 
-path_to_model = "./estimator/1695586778"
+path_to_model = "./estimator/1695664443"
 
 global model
 model = tf.saved_model.load(path_to_model)
@@ -322,7 +322,6 @@ def evaluate_board(board):
 
 
 def minimax(depth, board, alpha, beta, is_maximising_player):
-
     if depth == 0:
         return -evaluate_board(board)
     elif depth > 3:
