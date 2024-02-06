@@ -6,15 +6,21 @@
 
 import chess
 import chess.svg
+import chess.pgn
 from collections import OrderedDict
 from operator import itemgetter
 import pandas as pd
 import numpy as np
 import tensorflow as tf
 import os
+import collections
 import Utils
+import time
 
-path_to_model = "./estimator/1695664443"
+def current_milli_time():
+    return round(time.time() * 1000)
+
+path_to_model = "./estimator/test_model"
 
 global model
 model = tf.saved_model.load(path_to_model)
@@ -395,17 +401,40 @@ def ai_play_turn(current_board):
             return
 
     nb_moves = len(list(current_board.legal_moves))
-
+    m = None
     if nb_moves > 30:
-        current_board.push(minimax_root(3, current_board))
+        m = minimax_root(3, current_board)
     elif nb_moves > 10 and nb_moves <= 30:
-        current_board.push(minimax_root(4, current_board))
+        m = minimax_root(4, current_board)
     else:
-        current_board.push(minimax_root(5, current_board))
+        m = minimax_root(5, current_board)
+
+    current_board.push(m)
     return
+
+def board_to_game(board):
+    game = chess.pgn.Game()
+
+    # Undo all moves.
+    switchyard = collections.deque()
+    while board.move_stack:
+        switchyard.append(board.pop())
+
+    game.setup(board)
+    node = game
+
+    # Replay all moves.
+    while switchyard:
+        move = switchyard.pop()
+        node = node.add_variation(move)
+        board.push(move)
+
+    game.headers["Result"] = board.result()
+    return game
 
 
 def human_play_turn(current_board):
+    global pgn_game
     os.system("cls")
     draw_board(current_board)
     print("\n")
@@ -419,11 +448,13 @@ def human_play_turn(current_board):
         return human_play_turn(current_board)
     if move not in current_board.legal_moves:
         return human_play_turn(current_board)
+    
     current_board.push(move)
     return
 
 
 def play_game(turn, current_board):
+    global pgn_game, ai_white
     if current_board.is_stalemate():
         os.system("cls")
         print("Stalemate:")
@@ -431,27 +462,36 @@ def play_game(turn, current_board):
     else:
         if not turn:
             if not current_board.is_checkmate():
-                human_play_turn(current_board)
+                ai_white = True
+                ai_play_turn(current_board)
                 return play_game(not turn, current_board)
             else:
                 os.system("cls")
                 draw_board(current_board)
                 print("Engine wins")
+                with open(f"raw_training_data/{str(current_milli_time())}.pgn", 'w') as file:
+                    file.write(str(board_to_game(current_board)))
                 return
         else:
             if not current_board.is_checkmate():
+                ai_white = False
+                # human_play_turn(current_board)
                 ai_play_turn(current_board)
                 return play_game(not turn, current_board)
             else:
                 os.system("cls")
                 draw_board(current_board)
                 print("User wins")
+                with open(f"raw_training_data/{str(current_milli_time())}.pgn", 'w') as file:
+                    file.write(str(board_to_game(current_board)))
+
                 return
 
 
 def play():
     global ai_white
     ai_white = True
+
 
     board = chess.Board()
     human_first = input("User start? [y/n]: ")

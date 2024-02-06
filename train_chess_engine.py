@@ -4,14 +4,14 @@ import tensorflow as tf
 import pandas as pd
 import numpy as np
 from sklearn.utils import shuffle
-
+from rich.progress import track
 
 path = './raw_csv_training_data/'
 
 files = glob.glob(path + "/*.csv")
-#files_morphy = glob.glob(path_morphy + "/*.csv")
-#files_capablanca = glob.glob(path_capablanca + "/*.csv")
 
+
+tf.config.optimizer.set_jit(True)
 
 li = []
 
@@ -23,14 +23,9 @@ train = pd.concat(li, axis=0, ignore_index=True)
 
 train = shuffle(train)
 
-train.shape
 
 train.head()
 
-"""**features**
-
----
-"""
 
 features = list(train.iloc[:, 0:192].columns)
 
@@ -49,10 +44,6 @@ for feature_name in categorical_columns:
 for feature_name in numerical_columns:
   feature_columns.append(tf.feature_column.numeric_column(feature_name,dtype = tf.float32))
 
-"""**input function**
-
----
-"""
 
 def make_input_fn(data_df, label_df, num_epochs = 10, shuffle = True, batch_size = 32):
   def input_function():
@@ -63,12 +54,8 @@ def make_input_fn(data_df, label_df, num_epochs = 10, shuffle = True, batch_size
     return ds
   return input_function
 
-"""**split data into batches**
 
----
-"""
-
-def split_into_batches(df, batch_size=100000):
+def split_into_batches(df, batch_size=10000):
   nb_rows = len(df.index)
   intervals = []
 
@@ -87,25 +74,15 @@ def split_into_batches(df, batch_size=100000):
 
   return batches_X, batches_y
 
-batches_X, batches_y = split_into_batches(train)
+batches_X, batches_y = split_into_batches(train, 1000)
 
-"""**model**
-
----
-"""
 
 linear_est = tf.estimator.LinearClassifier(feature_columns = feature_columns, model_dir='.\\estimator\\')
 
-"""**train model**
-
----
-"""
 
 input_functions = []
 for df_X, df_y in zip(batches_X, batches_y):
   input_functions.append(make_input_fn(df_X, df_y))
-
-len(input_functions)
 
 # train the model on all the input functions
 i = 1
@@ -115,6 +92,8 @@ for input_function in input_functions:
   j += 1
 
 print(f"Total epochs required to train {str(j)}")
+
+
 
 for input_function in input_functions:
   print('<======================================== NEW BATCH ========================================>')
